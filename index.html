@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>녹화 대기열</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%23e5484d'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --fg: #17181a; --muted: #6b7076; --line: #e3e5e8;
+    --accent: #00a85a; --accent-fg: #fff; --rec: #e5484d; --warn: #c27c0e; --info: #3b6fd8;
+    --chip: #eef0f2; --input: #fff; --shadow: 0 1px 2px rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111214; --card: #1b1c1f; --fg: #e9eaec; --muted: #9a9fa6; --line: #2c2e33;
+      --accent: #1fc777; --accent-fg: #06150d; --rec: #ff6369; --warn: #f0b445; --info: #7aa2f7;
+      --chip: #26282c; --input: #141518; --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 14px/1.5 system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  .clock { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .pills { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .pill { background: var(--chip); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--muted); }
+  .pill b { color: var(--fg); font-weight: 600; }
+  .bad { color: var(--rec) !important; } .ok { color: var(--accent); } .warn { color: var(--warn); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: var(--shadow); }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  input, select, textarea { width: 100%; font: inherit; color: var(--fg); background: var(--input);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; min-width: 0; }
+  .row > .fit { flex: 0 0 auto; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--fg);
+    border-radius: 8px; padding: 7px 12px; cursor: pointer; white-space: nowrap; }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; font-weight: 600; }
+  button.danger { color: var(--rec); }
+  button:disabled { opacity: .5; cursor: default; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; }
+  .seg button.on { background: var(--chip); font-weight: 600; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .chips button { padding: 3px 10px; font-size: 12px; border-radius: 999px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 1.5em; }
+  .job { padding: 12px 14px; }
+  .job-top { display: flex; align-items: center; gap: 8px; }
+  .status { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--chip); flex: 0 0 auto; }
+  .s-recording { color: #fff; background: var(--rec); }
+  .s-waiting { color: var(--info); }
+  .s-scheduled { color: var(--warn); }
+  .s-done { color: var(--accent); }
+  .s-failed { color: var(--rec); }
+  .plat { font-size: 12px; color: var(--muted); flex: 0 0 auto; }
+  .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+  .title a { color: inherit; text-decoration: none; }
+  .title a:hover { text-decoration: underline; }
+  .sub { color: var(--muted); font-size: 13px; margin-top: 4px; overflow-wrap: anywhere; }
+  .metrics { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .metrics span b { font-weight: 600; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--rec); margin-right: 4px; animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity: .25; } }
+  .actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 8px; flex-wrap: wrap; }
+  .actions button { padding: 4px 10px; font-size: 13px; }
+  .detail { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .files div { font-size: 13px; overflow-wrap: anywhere; }
+  pre { background: var(--input); border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin: 8px 0 0;
+    font-size: 11.5px; line-height: 1.45; max-height: 280px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+  .empty { color: var(--muted); text-align: center; padding: 24px 0; }
+  .section-head { display: flex; justify-content: space-between; align-items: center; margin: 18px 0 8px; }
+  .section-head h2 { margin: 0; }
+  .toggle { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+  .toggle input { width: auto; }
+  details summary { cursor: pointer; font-weight: 600; }
+  .secret { -webkit-text-security: disc; font-family: monospace; }
+  .ck { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; font-size: 13px; flex-wrap: wrap; }
+  .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--fg); color: var(--bg);
+    padding: 8px 14px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px); }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>녹화 대기열</h1>
+    <span class="clock"><span id="clock"></span> <span id="me"></span></span>
+  </header>
+  <div class="pills" id="pills"></div>
+
+  <section class="card" aria-labelledby="add-h">
+    <h2 id="add-h">방송 대기 걸기</h2>
+    <div class="row">
+      <input id="url" placeholder="치지직 채널·유튜브 채널/영상 주소" autocomplete="off" inputmode="url">
+      <button class="fit" id="check">확인</button>
+    </div>
+    <div class="hint" id="check-out"></div>
+
+    <label for="memo">메모 (목록에 보일 이름, 선택)</label>
+    <input id="memo" autocomplete="off">
+
+    <label>시작</label>
+    <div class="seg" role="group">
+      <button id="mode-now" class="on" type="button">지금부터</button>
+      <button id="mode-at" type="button">예약</button>
+    </div>
+    <div id="at-box" hidden>
+      <label for="at">예약 시각 (<span class="tz-label">한국시간</span>)</label>
+      <input id="at" type="datetime-local">
+      <div class="chips" id="at-chips"></div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="hours">방송 기다릴 시간</label>
+        <select id="hours">
+          <option value="1">1시간</option><option value="2">2시간</option><option value="3">3시간</option>
+          <option value="6">6시간</option><option value="12" selected>12시간</option><option value="24">24시간</option>
+          <option value="48">48시간</option>
+        </select>
+      </div>
+      <div>
+        <label for="quality">화질</label>
+        <select id="quality">
+          <option value="">최고</option><option value="1080">1080p 이하</option>
+          <option value="720">720p 이하</option><option value="480">480p 이하</option>
+        </select>
+      </div>
+    </div>
+    <div class="hint" id="window"></div>
+    <div class="actions"><button class="primary" id="add">대기 등록</button></div>
+  </section>
+
+  <div class="section-head">
+    <h2>작업</h2>
+    <label class="toggle"><input type="checkbox" id="show-all"> 끝난 작업 모두</label>
+  </div>
+  <div id="jobs"><div class="empty">불러오는 중…</div></div>
+
+  <section class="card" style="margin-top:18px">
+    <details id="ck-box">
+      <summary>쿠키 (성인 방송·연령 제한 영상용)</summary>
+      <div id="ck-status" style="margin-top:10px"></div>
+      <label for="ck-platform">플랫폼</label>
+      <select id="ck-platform"><option value="chzzk">치지직</option><option value="youtube">유튜브</option></select>
+      <label for="ck-text">쿠키 붙여넣기 — Netscape cookies.txt 내용, 또는 치지직은 NID_AUT=...; NID_SES=... 한 줄</label>
+      <textarea id="ck-text" class="secret" rows="3" autocomplete="off" spellcheck="false"
+        placeholder="NID_AUT=...; NID_SES=..."></textarea>
+      <div class="actions"><button class="primary" id="ck-save">저장</button></div>
+      <div class="hint">저장된 값은 화면에 다시 보이지 않습니다.</div>
+    </details>
+  </section>
+</main>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+// 시간대는 서버(컨테이너 TZ)를 따른다 — /api/jobs 응답으로 갱신
+let TZ = 'Asia/Seoul';
+let TZ_LABEL = '한국시간';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const open = new Set();
+let serverSkew = 0;  // 서버 시계 - 브라우저 시계 (초)
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, {
+    ...opts,
+    headers: { 'X-Rec': '1', ...(opts.body ? { 'Content-Type': 'application/json' } : {}) },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  if (r.status === 401) { location.href = '/auth/login?next=/'; throw new Error('로그인 필요'); }
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+  return data;
+}
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+// ---- 시각 (모두 서버 시간대 기준) ----
+const nowSec = () => Date.now() / 1000 + serverSkew;
+const parts = (sec) => Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+  timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  second: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(sec * 1000)).map((p) => [p.type, p.value]));
+const localInput = (sec) => { const p = parts(sec); return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`; };
+// 그 시간대의 벽시계 시각 → UTC와의 차(초)
+const tzOffset = (sec) => { const p = parts(sec); return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) / 1000 - Math.floor(sec); };
+// "YYYY-MM-DDTHH:MM"(서버 시간대) → epoch 초 (서머타임 경계는 한 번 더 보정)
+const fromLocal = (v) => {
+  const guess = Date.parse(`${v}:00Z`) / 1000;
+  const first = guess - tzOffset(guess);
+  return guess - tzOffset(first);
+};
+function when(sec) {
+  if (!sec) return '-';
+  const p = parts(sec), t = parts(nowSec());
+  const day = p.year === t.year && p.month === t.month && p.day === t.day ? '오늘'
+    : (fromLocal(`${p.year}-${p.month}-${p.day}T00:00`) - fromLocal(`${t.year}-${t.month}-${t.day}T00:00`)) === 86400 ? '내일'
+    : `${+p.month}/${+p.day}`;
+  return `${day} ${p.hour}:${p.minute}`;
+}
+const dur = (s) => { s = Math.max(0, Math.floor(s)); return `${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+const until = (s) => { s = Math.max(0, Math.round(s / 60)); return s < 60 ? `${s}분 후` : `${Math.floor(s / 60)}시간 ${s % 60}분 후`; };
+function human(n) {
+  n = Number(n || 0);
+  for (const u of ['B', 'KB', 'MB', 'GB', 'TB']) {
+    if (n < 1024 || u === 'TB') return u === 'B' || u === 'KB' ? `${n.toFixed(0)}${u}` : `${n.toFixed(1)}${u}`;
+    n /= 1024;
+  }
+}
+
+function tickClock() {
+  const p = parts(nowSec());
+  $('clock').textContent = `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second} ${TZ_LABEL}`;
+}
+
+// ---- 등록 폼 ----
+let mode = 'now';
+function setMode(m) {
+  mode = m;
+  $('mode-now').classList.toggle('on', m === 'now');
+  $('mode-at').classList.toggle('on', m === 'at');
+  $('at-box').hidden = m !== 'at';
+  if (m === 'at' && !$('at').value) $('at').value = localInput(Math.ceil(nowSec() / 600) * 600 + 1800);
+  renderWindow();
+}
+$('mode-now').onclick = () => setMode('now');
+$('mode-at').onclick = () => setMode('at');
+
+function renderChips() {
+  const box = $('at-chips');
+  box.innerHTML = '';
+  const add = (text, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.onclick = () => { $('at').value = localInput(fn()); renderWindow(); }; box.appendChild(b); };
+  add('+30분', () => Math.ceil(nowSec() / 60) * 60 + 1800);
+  add('+1시간', () => Math.ceil(nowSec() / 60) * 60 + 3600);
+  for (const h of [18, 19, 20, 21, 22]) {
+    add(`${h}:00`, () => {
+      const t = parts(nowSec());
+      let s = fromLocal(`${t.year}-${t.month}-${t.day}T${String(h).padStart(2, '0')}:00`);
+      if (s <= nowSec()) s += 86400;  // 지났으면 내일
+      return s;
+    });
+  }
+}
+
+function renderWindow() {
+  const start = mode === 'at' && $('at').value ? fromLocal($('at').value) : nowSec();
+  const end = start + Number($('hours').value) * 3600;
+  let txt = `${when(start)}부터 ${when(end)}까지 방송을 기다립니다 (${TZ_LABEL})`;
+  if (mode === 'at' && start < nowSec()) txt = '⚠ 예약 시각이 이미 지났습니다 — 등록하면 바로 시작합니다';
+  $('window').textContent = txt;
+}
+$('at').oninput = renderWindow;
+$('hours').onchange = renderWindow;
+
+$('check').onclick = async () => {
+  const url = $('url').value.trim();
+  if (!url) return;
+  const out = $('check-out');
+  out.textContent = '확인 중…';
+  out.className = 'hint';
+  $('check').disabled = true;
+  try {
+    const r = await api('/api/check', { method: 'POST', body: { url } });
+    let t = `${r.platform_ko} · ${r.mode_ko}`;
+    if (r.name) t += ` · ${r.name}`;
+    if (r.error) t += ` · ${r.error}`;
+    else t += r.live ? ` · 방송 중: ${r.title || ''}` : ' · 지금은 방송 꺼짐';
+    if (r.adult) t += ' (성인)';
+    out.textContent = t;
+    out.className = 'hint ' + (r.live ? 'ok' : '');
+    if (r.name && !$('memo').value) $('memo').placeholder = r.name;
+  } catch (e) {
+    out.textContent = e.message;
+    out.className = 'hint bad';
+  } finally {
+    $('check').disabled = false;
+  }
+};
+
+$('add').onclick = async () => {
+  const url = $('url').value.trim();
+  if (!url) { $('url').focus(); return; }
+  $('add').disabled = true;
+  try {
+    const r = await api('/api/jobs', { method: 'POST', body: {
+      url, memo: $('memo').value, hours: Number($('hours').value),
+      quality: $('quality').value ? Number($('quality').value) : null,
+      start_at: mode === 'at' && $('at').value ? $('at').value : null,
+    } });
+    toast(`등록됨 (${r.id})${r.messages.length ? ' — ' + r.messages.join(' / ') : ''}`);
+    $('url').value = ''; $('memo').value = ''; $('memo').placeholder = ''; $('check-out').textContent = '';
+    setMode('now');
+    refresh();
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    $('add').disabled = false;
+  }
+};
+
+// ---- 목록 ----
+function jobCard(j) {
+  const job = j.job, s = j.status;
+  const el = document.createElement('article');
+  el.className = 'card job';
+  const live = j.live_title && j.live_title !== j.label ? `<div class="sub">📺 ${esc(j.live_title)}${j.adult ? ' (성인)' : ''}</div>` : '';
+  let metrics = '';
+  if (s === 'recording') {
+    metrics = `<div class="metrics">
+      <span><span class="dot"></span><b>${dur(nowSec() - (j.recording_since || nowSec()))}</b></span>
+      <span>용량 <b>${human((j.total_bytes || 0) + (j.bytes || 0))}</b></span>
+      <span>속도 <b>${human(j.rate)}/s</b></span>
+      ${j.reconnects ? `<span class="warn">재연결 ${j.reconnects}회</span>` : ''}</div>`;
+  }
+  let info = '';
+  if (s === 'scheduled') info = `${when(j.start_at)} 시작 (${until(j.start_at - nowSec())}) · ${when(j.deadline)}까지 대기`;
+  else if (s === 'waiting') info = `${esc(j.note || '')}${j.checked_at ? ` · ${Math.round(nowSec() - j.checked_at)}초 전 확인` : ''} · ${when(j.deadline)}까지 대기`;
+  else if (s === 'recording') info = j.note && j.note.startsWith('⚠') ? `<span class="warn">${esc(j.note)}</span>` : `${when(j.recording_since)} 녹화 시작`;
+  else {
+    info = `${when(j.finished_at)} 종료 · 파일 ${j.files.length}개 · ${human(j.total_bytes)}`;
+    if (j.error) info += ` · <span class="bad">${esc(j.error)}</span>`;
+  }
+  el.innerHTML = `
+    <div class="job-top">
+      <span class="status s-${esc(s)}">${esc(j.status_ko)}</span>
+      <span class="plat">${esc(j.platform_ko)}</span>
+      <span class="title"><a href="${esc(job.url)}" target="_blank" rel="noreferrer">${esc(j.label)}</a></span>
+    </div>
+    ${live}${metrics}
+    <div class="sub">${info}</div>
+    <div class="actions">
+      <button data-act="detail">${open.has(j.id) ? '접기' : '상세'}</button>
+      ${j.final ? '<button data-act="rm" class="danger">기록 삭제</button>'
+        : `<button data-act="stop" class="danger">${s === 'recording' ? '녹화 중지' : '대기 취소'}</button>`}
+    </div>
+    <div class="detail" ${open.has(j.id) ? '' : 'hidden'}></div>`;
+  el.querySelector('[data-act=detail]').onclick = () => { open.has(j.id) ? open.delete(j.id) : open.add(j.id); refresh(); };
+  const stop = el.querySelector('[data-act=stop]');
+  if (stop) stop.onclick = async () => {
+    if (!confirm(s === 'recording' ? '녹화를 멈출까요? 지금까지 분량은 저장됩니다.' : '대기를 취소할까요?')) return;
+    try { toast((await api(`/api/jobs/${j.id}/stop`, { method: 'POST' })).message); refresh(); } catch (e) { toast(e.message); }
+  };
+  const rm = el.querySelector('[data-act=rm]');
+  if (rm) rm.onclick = async () => {
+    if (!confirm('작업 기록을 지울까요? 녹화 파일은 그대로 남습니다.')) return;
+    try { await api(`/api/jobs/${j.id}`, { method: 'DELETE' }); open.delete(j.id); refresh(); } catch (e) { toast(e.message); }
+  };
+  if (open.has(j.id)) loadDetail(j.id, el.querySelector('.detail'));
+  return el;
+}
+
+async function loadDetail(id, box) {
+  try {
+    const d = await api(`/api/jobs/${id}`);
+    const job = d.job;
+    const rows = [
+      ['ID', d.id], ['주소', job.url],
+      ['등록', when(job.created_at)], job.start_at ? ['예약', when(job.start_at)] : null,
+      ['대기 한도', when(d.deadline)], job.quality ? ['화질', `${job.quality}p 이하`] : null,
+    ].filter(Boolean);
+    box.innerHTML = rows.map(([k, v]) => `<div class="sub"><b>${esc(k)}</b> ${esc(v)}</div>`).join('')
+      + (d.files.length ? `<div class="files" style="margin-top:6px">${d.files.map((f) => `<div>📁 ${esc(f.path)} <span class="sub">${f.size == null ? '(없음)' : human(f.size)}</span></div>`).join('')}</div>` : '')
+      + `<pre>${esc((d.log || []).join('\n'))}</pre>`;
+    const pre = box.querySelector('pre');
+    pre.scrollTop = pre.scrollHeight;
+  } catch (e) {
+    box.textContent = e.message;
+  }
+}
+
+function renderPills(dm) {
+  const p = [];
+  p.push(dm.alive ? '<span class="pill">데몬 <b class="ok">정상</b></span>' : '<span class="pill bad">⚠ 데몬 응답 없음</span>');
+  if (dm.recording) p.push(`<span class="pill">녹화 중 <b>${dm.recording}</b></span>`);
+  if (dm.free_gb != null) p.push(`<span class="pill">여유 공간 <b class="${dm.free_gb < 50 ? 'warn' : ''}">${dm.free_gb}GB</b></span>`);
+  if (dm.ytdlp) p.push(`<span class="pill">yt-dlp <b>${esc(dm.ytdlp)}</b></span>`);
+  $('pills').innerHTML = p.join('');
+}
+
+let busy = false;
+async function refresh() {
+  if (busy) return;
+  busy = true;
+  try {
+    const d = await api(`/api/jobs${$('show-all').checked ? '?all=1' : ''}`);
+    serverSkew = d.now - Date.now() / 1000;
+    if (d.daemon.tz && d.daemon.tz !== TZ) {
+      TZ = d.daemon.tz;
+      TZ_LABEL = d.daemon.tz_label || TZ;
+      document.querySelectorAll(".tz-label").forEach((e) => { e.textContent = TZ_LABEL; });
+      renderWindow();
+    }
+    renderPills(d.daemon);
+    const box = $('jobs');
+    box.innerHTML = '';
+    if (!d.jobs.length) box.innerHTML = '<div class="empty">작업 없음</div>';
+    for (const j of d.jobs) box.appendChild(jobCard(j));
+  } catch (e) {
+    $('pills').innerHTML = `<span class="pill bad">⚠ 서버 연결 실패: ${esc(e.message)}</span>`;
+  } finally {
+    busy = false;
+  }
+}
+$('show-all').onchange = refresh;
+
+// ---- 쿠키 ----
+function renderCookies(list) {
+  $('ck-status').innerHTML = list.map((c) => {
+    if (!c.present) return `<div class="ck"><span>${esc(c.platform_ko)}</span><span class="sub">없음</span></div>`;
+    const keys = Object.entries(c.keys).map(([k, ok]) => `${esc(k)}${ok ? '✓' : '✗'}`).join(' ');
+    const login = 'logged_in' in c ? (c.logged_in ? '<b class="ok">로그인 확인됨</b>' : '<b class="bad">로그인 안 됨(만료?)</b>') : '';
+    return `<div class="ck"><span>${esc(c.platform_ko)} ${login}</span><span class="sub">${keys} · 수정 ${when(c.modified)}${c.expires ? ` · 만료 ${when(c.expires)}` : ''}</span></div>`;
+  }).join('');
+}
+$('ck-box').ontoggle = async () => {
+  if (!$('ck-box').open) return;
+  $('ck-status').innerHTML = '<div class="sub">확인 중…</div>';
+  try { renderCookies(await api('/api/cookies')); } catch (e) { $('ck-status').textContent = e.message; }
+};
+$('ck-save').onclick = async () => {
+  const text = $('ck-text').value.trim();
+  if (!text) return;
+  $('ck-save').disabled = true;
+  try {
+    renderCookies(await api(`/api/cookies/${$('ck-platform').value}`, { method: 'POST', body: { text } }));
+    $('ck-text').value = '';
+    toast('쿠키 저장됨');
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    $('ck-save').disabled = false;
+  }
+};
+
+api('/auth/me').then((m) => { if (m.user) $('me').innerHTML = `· ${esc(m.user)} <a href="/auth/logout" style="color:inherit">로그아웃</a>`; }).catch(() => {});
+renderChips();
+renderWindow();
+tickClock();
+refresh();
+setInterval(tickClock, 1000);
+setInterval(() => { if (!document.hidden) refresh(); }, 5000);
+setInterval(renderWindow, 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+# 실행 중 데이터 — 쿠키·로그인 키 등 비밀값 포함
+data/
+recordings/
+.env
+.env.bak*
+__pycache__/

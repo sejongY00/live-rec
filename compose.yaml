@@ -1,0 +1,36 @@
+services:
+  live-rec:
+    build:
+      context: .
+      args:
+        PUID: ${PUID:-1000}
+        PGID: ${PGID:-1000}
+    image: live-rec:local
+    container_name: live-rec
+    restart: unless-stopped
+    init: true
+    environment:
+      - TZ=${TZ:-Asia/Seoul}
+      # 여유 공간이 이보다 적으면 녹화를 저장하고 멈춘다
+      - REC_MIN_FREE_GB=${REC_MIN_FREE_GB:-20}
+      # 웹 화면에 표시할 저장 위치 (호스트 경로)
+      - REC_DIR_HOST=${REC_DIR:-./recordings}
+      # 웹 화면 OIDC 로그인 (선택). 비우면 같은 네트워크 직접 접속만 허용
+      # 시크릿은 data/auth/oidc_client_secret — docker exec -it live-rec rec auth secret
+      - REC_OIDC_ISSUER=${REC_OIDC_ISSUER:-}
+      - REC_OIDC_CLIENT_ID=${REC_OIDC_CLIENT_ID:-}
+      - REC_PUBLIC_URL=${REC_PUBLIC_URL:-}
+      - REC_ALLOWED_USERS=${REC_ALLOWED_USERS:-}
+    volumes:
+      # 대기열·로그·쿠키·로그인 키 (cookies/, auth/ 는 비밀값)
+      - ./data:/data
+      # 녹화 저장 위치
+      - ${REC_DIR:-./recordings}:/recordings
+    ports:
+      - "${REC_WEB_PORT:-8790}:8790"
+    # 녹화 중 종료 시 파일을 마무리할 시간
+    stop_grace_period: 3m
+    mem_limit: 1g
+    labels:
+      # 로컬 빌드 이미지라 Watchtower 등 자동 업데이트 대상에서 뺀다 (yt-dlp는 컨테이너가 스스로 업데이트)
+      - com.centurylinklabs.watchtower.enable=false
