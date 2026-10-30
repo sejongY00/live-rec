@@ -336,7 +336,7 @@ class Worker(threading.Thread):
             if self.stop_requested():
                 return self.finish('stopped')
             if result == 'expired':
-                return self.finish('expired')
+                return self.finish('done' if self.files() else 'expired')
             if result == 'limit' or self.limit_reached():
                 return self.finish('done')
             if result == 'nospace':
@@ -353,6 +353,12 @@ class Worker(threading.Thread):
                     self.log(f'녹화가 끊겼지만 방송은 계속 중 — 다시 연결 ({n}회째)')
                     time.sleep(10 * empty + 5)
                     continue
+            # 방송이 꺼졌어도 대기 시간 안에 다시 켜지면 또 녹화한다 (새 파일)
+            if self.job['mode'] == 'channel' and (result == 0 or self.files()) and now() < self.deadline():
+                self.set(status='waiting', note='방송 종료 — 대기 시간까지 다시 켜지는지 확인')
+                self.log(f'방송 종료 — {ts(self.deadline())}까지 다시 켜지면 또 녹화')
+                self.sleep(self.job['interval'])
+                continue
             if result == 0 or self.files():
                 return self.finish('done')
             return self.finish('failed', error=self.last_error())

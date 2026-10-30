@@ -29,7 +29,8 @@ TOOLS = [
         'inputSchema': {'type': 'object', 'properties': {
             'url': {'type': 'string', 'description': '치지직·유튜브 채널 또는 영상 주소'},
             'hours': {'type': 'number', 'exclusiveMinimum': 0, 'maximum': 72,
-                      'description': '방송을 기다릴 최대 시간 (기본 12)'},
+                      'description': ('방송을 기다릴 시간 (기본 12). 이 시간 안에는 방송이 꺼졌다 다시 켜져도 '
+                                      '또 녹화한다(새 파일). 한 번만 받으려면 짧게 잡는다')},
             'start_at': {'type': 'string',
                          'description': '예약 시작 시각 (한국시간). "2026-10-04 21:00", "10-04 21:00", "21:00"(지났으면 내일). 생략하면 지금부터'},
             'quality': {'type': 'integer', 'description': '최대 해상도 (예: 1080, 720). 생략하면 최고 화질'},
