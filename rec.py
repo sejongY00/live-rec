@@ -271,6 +271,10 @@ class Worker(threading.Thread):
     def deadline(self):
         return start_of(self.job) + self.job['wait_hours'] * 3600
 
+    def limit_reached(self):
+        m, first = self.job.get('max_minutes'), self.state.get('first_recording_at')
+        return bool(m and first and now() - first >= m * 60)
+
     def sleep(self, sec):
         end = now() + sec
         while now() < end and not self.stop_requested() and not SHUTDOWN.is_set():
@@ -333,6 +337,8 @@ class Worker(threading.Thread):
                 return self.finish('stopped')
             if result == 'expired':
                 return self.finish('expired')
+            if result == 'limit' or self.limit_reached():
+                return self.finish('done')
             if result == 'nospace':
                 return self.finish('failed', error=f'저장 공간 부족 (여유 {MIN_FREE_GB:.0f}GB 미만)')
             # 한 조각도 못 받고 실패하는 일이 반복되면 재연결해도 소용없다
@@ -429,6 +435,8 @@ class Worker(threading.Thread):
                 st['status'] = 'recording'
                 if not self.state.get('recording_since') or self.state.get('status') != 'recording':
                     st['recording_since'] = t
+                if not self.state.get('first_recording_at'):
+                    st['first_recording_at'] = t  # 녹화 길이 제한의 기준. 재연결해도 바꾸지 않는다
                 if size == last_size:
                     stalled = self.state.get('stalled_since') or t
                     st['stalled_since'] = stalled
@@ -446,6 +454,8 @@ class Worker(threading.Thread):
                     why, result = '데몬 종료', 'shutdown'
                 elif self.stop_requested():
                     why = '중지 요청'
+                elif self.limit_reached():
+                    why, result = f"녹화 시간 {j['max_minutes']:g}분 도달", 'limit'
                 elif size == 0 and t > self.deadline():
                     why, result = '대기 시간 초과', 'expired'
                 elif free_gb() < MIN_FREE_GB:
@@ -611,13 +621,15 @@ def start_of(job):
 
 
 def create_job(url, hours=12, memo=None, fmt=None, interval=None, extra=None, start_at=None,
-               quality=None):
+               quality=None, max_minutes=None):
     """대기 등록 -> (작업, 안내 메시지 목록)"""
     url = (url or '').strip()
     if not re.match(r'https?://', url):
         raise RecError('주소는 http(s)://로 시작해야 함')
     if not 0 < float(hours) <= 72:
         raise RecError('대기 시간은 0~72시간')
+    if max_minutes is not None and not 0 < float(max_minutes) <= 72 * 60:
+        raise RecError('녹화 길이는 0~4320분')
     info = classify(url)
     jid = datetime.now(LOCAL_TZ).strftime('%m%d-%H%M%S')
     while (JOBS / jid).exists():
@@ -629,6 +641,7 @@ def create_job(url, hours=12, memo=None, fmt=None, interval=None, extra=None, st
            'interval': int(interval or (30 if info['platform'] == 'chzzk' else 120)),
            'memo': (memo or '').strip() or None, 'format': fmt or None,
            'quality': int(quality) if quality else None,
+           'max_minutes': float(max_minutes) if max_minutes else None,
            'extra_args': shlex.split(extra or ''), **info}
     msgs = []
     if info['platform'] == 'chzzk' and info['mode'] == 'channel':
@@ -776,13 +789,16 @@ def daemon_warning():
 
 def cmd_add(a):
     start_at = parse_at(a.at) if a.at else None
-    job, msgs = create_job(a.url, a.hours, a.memo, a.format, a.interval, a.extra, start_at, a.quality)
+    job, msgs = create_job(a.url, a.hours, a.memo, a.format, a.interval, a.extra, start_at, a.quality,
+                           a.minutes)
     mode = '채널 방송 대기' if job['mode'] == 'channel' else '바로 받기'
     print(f"등록: {job['id']}  [{PLATFORM_KO[job['platform']]} · {mode}]  {label(job, {})}")
     if job['start_at']:
         print(f"예약: {ts(job['start_at'])} ({TZ_LABEL})부터 시작")
     if job['mode'] == 'channel' or job['platform'] == 'youtube':
         print(f"대기 한도: {ts(start_of(job) + job['wait_hours'] * 3600)} 까지 ({job['wait_hours']:g}시간)")
+    if job['max_minutes']:
+        print(f"녹화 길이: {job['max_minutes']:g}분 후 자동 종료")
     for m in msgs:
         print(m)
 
@@ -945,6 +961,7 @@ def main():
     s.add_argument('-a', '--at', help='예약 시작 (TZ 기준, 기본 한국시간): "2026-10-04 21:00", "10-04 21:00", "21:00"')
     s.add_argument('-m', '--memo', help='목록에 보일 이름')
     s.add_argument('-q', '--quality', type=int, help='최대 해상도 (예: 1080, 720)')
+    s.add_argument('-d', '--minutes', type=float, help='녹화 길이(분). 녹화가 시작된 뒤 이만큼 지나면 저장하고 종료')
     s.add_argument('-f', '--format', help='yt-dlp 포맷 (예: "bv*[height<=720]+ba/b")')
     s.add_argument('-i', '--interval', type=int, help='방송 확인 간격 초 (치지직 30, 유튜브 120)')
     s.add_argument('-x', '--extra', help='yt-dlp 추가 인자 (따옴표로 묶어서)')

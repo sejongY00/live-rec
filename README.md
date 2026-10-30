@@ -51,6 +51,7 @@ R="docker exec live-rec rec"
 $R add https://chzzk.naver.com/<채널ID> -H 6 -m "메모"   # 지금부터 6시간 대기
 $R add https://www.youtube.com/@핸들 -a "21:00" -H 3      # 21시부터 3시간 대기 (지난 시각이면 내일)
 $R add <URL> -a "10-05 20:30" -q 1080                     # 날짜 지정, 1080p 이하
+$R add <URL> -d 30                                          # 녹화 시작 후 30분만 받고 자동 종료
 $R ls                # 목록
 $R st <ID>           # 상세 + 로그
 $R stop <ID>         # 대기 취소 / 녹화 중지 (분량 저장)
@@ -80,7 +81,7 @@ docker exec live-rec rec cookies                   # 상태 확인 (값은 출�
 `.env`에 `REC_MCP_TOKEN`(32자 이상, `openssl rand -hex 32`)을 넣고 `docker compose up -d`하면
 `http://<서버 IP>:8790/mcp`가 MCP 서버(Streamable HTTP)가 된다. `Authorization: Bearer <REC_MCP_TOKEN>` 헤더로 붙는다.
 
-- 도구: `rec_check`(방송 확인), `rec_add`(등록·예약), `rec_list`(목록), `rec_status`(상세+로그), `rec_stop`(중지, `confirm: true` 필수)
+- 도구: `rec_check`(방송 확인), `rec_add`(등록·예약, `minutes`로 녹화 길이 지정), `rec_list`(목록), `rec_status`(상세+로그), `rec_stop`(중지, `confirm: true` 필수)
 - 쿠키 입력과 기록 삭제는 도구로 열지 않는다
 - 웹 로그인(OIDC)과 별개로 토큰만 확인한다. 대신 브라우저 요청(Origin 헤더)과 리버스 프록시를 거친 요청(`X-Forwarded-For`)은 거부하므로, 공개 주소가 아니라 포트로 직접 붙어야 한다
 

@@ -22,7 +22,10 @@ TOOLS = [
     {
         'name': 'rec_add',
         'description': ('녹화를 등록합니다. 채널 주소면 방송이 켜지는 순간부터 녹화하고, 영상 주소면 바로 받습니다. '
-                        'start_at을 주면 그 시각부터 hours시간 동안 방송을 기다립니다. 시각은 한국시간입니다.'),
+                        'start_at을 주면 그 시각부터 hours시간 동안 방송을 기다립니다. 시각은 한국시간입니다. '
+                        '녹화는 서버에서 백그라운드로 진행되니 등록 결과만 바로 알려주세요. '
+                        '"N분만 녹화"처럼 길이를 정하면 minutes를 넣으세요. 서버가 그 시간 뒤 저장하고 자동으로 멈추므로 '
+                        '기다리거나 rec_stop을 부를 필요가 없습니다.'),
         'inputSchema': {'type': 'object', 'properties': {
             'url': {'type': 'string', 'description': '치지직·유튜브 채널 또는 영상 주소'},
             'hours': {'type': 'number', 'exclusiveMinimum': 0, 'maximum': 72,
@@ -30,6 +33,8 @@ TOOLS = [
             'start_at': {'type': 'string',
                          'description': '예약 시작 시각 (한국시간). "2026-10-04 21:00", "10-04 21:00", "21:00"(지났으면 내일). 생략하면 지금부터'},
             'quality': {'type': 'integer', 'description': '최대 해상도 (예: 1080, 720). 생략하면 최고 화질'},
+            'minutes': {'type': 'number', 'exclusiveMinimum': 0, 'maximum': 4320,
+                        'description': '녹화 길이(분). 녹화가 실제로 시작된 뒤 이만큼 지나면 저장하고 자동 종료. 생략하면 방송이 끝날 때까지'},
             'memo': {'type': 'string', 'description': '목록에 보일 이름'}},
             'required': ['url'], 'additionalProperties': False},
         'annotations': {'title': '녹화 등록', 'readOnlyHint': False, 'destructiveHint': False,
@@ -73,6 +78,8 @@ def _brief(rec, v):
     if v['files']:
         out['files'] = [f['path'] for f in v['files']]
         out['size'] = rec.human(sum(f['size'] or 0 for f in v['files']))
+    if v['job'].get('max_minutes'):
+        out['max_minutes'] = v['job']['max_minutes']
     if v.get('note'):
         out['note'] = v['note']
     return out
@@ -84,9 +91,11 @@ def _call(rec, name, args):
     if name == 'rec_add':
         start_at = rec.parse_at(args['start_at']) if args.get('start_at') else None
         job, msgs = rec.create_job(args.get('url'), args.get('hours') or 12, args.get('memo'),
-                                   start_at=start_at, quality=args.get('quality') or None)
+                                   start_at=start_at, quality=args.get('quality') or None,
+                                   max_minutes=args.get('minutes') or None)
         return {'id': job['id'], 'label': rec.label(job, {}), 'platform': rec.PLATFORM_KO.get(job['platform']),
-                'start_at': rec.ts(rec.start_of(job)), 'wait_hours': job['wait_hours'], 'messages': msgs}
+                'start_at': rec.ts(rec.start_of(job)), 'wait_hours': job['wait_hours'],
+                'max_minutes': job['max_minutes'], 'messages': msgs}
     if name == 'rec_list':
         info = rec.daemon_info()
         return {'daemon_alive': info['alive'], 'now': rec.ts(), 'tz': info['tz_label'],

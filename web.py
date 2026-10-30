@@ -5,7 +5,7 @@
   GET    /                       화면 (index.html)
   GET    /api/jobs[?all=1]       목록 + 데몬 상태
   GET    /api/jobs/<id>          상세 + 로그
-  POST   /api/jobs               등록 {url, memo, hours, start_at:"YYYY-MM-DDTHH:MM"(컨테이너 TZ), quality}
+  POST   /api/jobs               등록 {url, memo, hours, start_at:"YYYY-MM-DDTHH:MM"(컨테이너 TZ), quality, max_minutes}
   POST   /api/jobs/<id>/stop     중지
   DELETE /api/jobs/<id>          기록 삭제 (녹화 파일은 그대로)
   POST   /api/check              {url} 방송 여부 확인
@@ -283,7 +283,8 @@ def serve(port, rec):
                     b = self.body()
                     start_at = rec.parse_at(b['start_at']) if b.get('start_at') else None
                     job, msgs = rec.create_job(b.get('url'), b.get('hours') or 12, b.get('memo'),
-                                               start_at=start_at, quality=b.get('quality') or None)
+                                               start_at=start_at, quality=b.get('quality') or None,
+                                               max_minutes=b.get('max_minutes') or None)
                     return self.send(200, {'id': job['id'], 'messages': msgs})
                 if m := re.fullmatch(r'/api/jobs/([\w-]+)', path):
                     jid = rec.find_job(m[1])
