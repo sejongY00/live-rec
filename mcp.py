@@ -42,7 +42,9 @@ TOOLS = [
     },
     {
         'name': 'rec_list',
-        'description': '녹화 작업 목록입니다. 진행 중(녹화중·대기·예약)이 먼저 오고, 끝난 작업은 최근 20개까지 붙습니다.',
+        'description': ('녹화 작업 목록입니다. 진행 중(녹화중·대기·예약)이 먼저 오고, 끝난 작업은 최근 20개까지 붙습니다. '
+                        '녹화 중이면 recorded(지금까지 용량)·rate(초당 속도)·elapsed(경과 H:MM:SS)가, '
+                        '길이 제한이 있으면 auto_stop_at(자동 종료 시각)이 붙습니다.'),
         'inputSchema': {'type': 'object', 'properties': {
             'all': {'type': 'boolean', 'description': 'true면 끝난 작업을 모두 포함'}},
             'additionalProperties': False},
@@ -50,7 +52,7 @@ TOOLS = [
     },
     {
         'name': 'rec_status',
-        'description': '작업 하나의 상세 상태와 최근 로그 30줄입니다.',
+        'description': '작업 하나의 상세 상태(rec_list와 같은 항목: 녹화 중 용량·속도·경과 포함)와 최근 로그 30줄입니다.',
         'inputSchema': {'type': 'object', 'properties': {'id': job_id},
                         'required': ['id'], 'additionalProperties': False},
         'annotations': {'title': '녹화 상태', 'readOnlyHint': True, 'openWorldHint': False},
@@ -78,10 +80,22 @@ def _brief(rec, v):
     if v['files']:
         out['files'] = [f['path'] for f in v['files']]
         out['size'] = rec.human(sum(f['size'] or 0 for f in v['files']))
+    # 녹화 중: 이번 조각(bytes)은 아직 임시 폴더에 있어 files에 안 잡히므로 끝난 조각(total_bytes)과 더한다
+    if v['status'] == 'recording':
+        out['recorded'] = rec.human((v.get('total_bytes') or 0) + (v.get('bytes') or 0))
+        out['rate'] = rec.human(v.get('rate')) + '/s'
+    first = v.get('first_recording_at') or v.get('recording_since')
+    if first:
+        end = rec.now() if not v['final'] else v.get('finished_at') or rec.now()
+        out['elapsed'] = rec.dur(end - first)  # 처음 녹화가 시작된 뒤 지난 시간 (H:MM:SS)
     if v['job'].get('max_minutes'):
         out['max_minutes'] = v['job']['max_minutes']
-    if v.get('note'):
+        if first and not v['final']:
+            out['auto_stop_at'] = rec.ts(first + v['job']['max_minutes'] * 60)
+    if v.get('note') and not v['final']:  # 끝난 작업의 note는 마지막 진행 메모라 오해를 부른다
         out['note'] = v['note']
+    if v.get('error'):
+        out['error'] = v['error']
     return out
 
 
