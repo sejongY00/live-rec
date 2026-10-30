@@ -11,8 +11,12 @@
   POST   /api/check              {url} 방송 여부 확인
   GET    /api/cookies            쿠키 상태 (값은 절대 내보내지 않음)
   POST   /api/cookies/<platform> {text} 쿠키 저장
+  POST   /mcp                    MCP (Bearer REC_MCP_TOKEN, mcp.py)
 
 변경 요청(POST/DELETE)은 X-Rec 헤더가 있어야 한다 — 다른 사이트에서 몰래 보내는 요청(CSRF) 차단.
+
+MCP: REC_MCP_TOKEN(32자 이상)이 있으면 /mcp가 켜진다. 로그인과 별개로 토큰만 보며, 브라우저 요청(Origin 있음)과
+리버스 프록시를 거친 요청(X-Forwarded-For 있음)은 거부한다 — 같은 망의 에이전트가 포트로 직접 붙는 용도.
 
 로그인: OIDC(PKCE, Gitea·Authentik·Keycloak 등). REC_OIDC_ISSUER·REC_OIDC_CLIENT_ID·REC_PUBLIC_URL·
 REC_ALLOWED_USERS와 시크릿(data/auth/oidc_client_secret)이 모두 있으면
@@ -109,7 +113,13 @@ def page(title, body):
 
 
 def serve(port, rec):
+    import mcp
     auth = Auth(rec)
+    mcp_token = os.environ.get('REC_MCP_TOKEN', '').strip()
+    if mcp_token and len(mcp_token) < 32:
+        print(f'[{rec.ts()}] ⚠ REC_MCP_TOKEN이 32자 미만이라 /mcp를 끔 (openssl rand -hex 32)', flush=True)
+        mcp_token = ''
+    mcp_hash = mcp_token and hashlib.sha256(mcp_token.encode()).digest()
 
     class Handler(BaseHTTPRequestHandler):
         server_version = 'live-rec'
@@ -164,6 +174,27 @@ def serve(port, rec):
                 return json.loads(self.rfile.read(n) or b'{}')
             except json.JSONDecodeError:
                 raise rec.RecError('JSON 형식이 아님')
+
+        def mcp_route(self, method):
+            if not mcp_hash:
+                return self.send(404, {'error': '없는 주소'})
+            # 브라우저(DNS 리바인딩)와 외부 공개 주소로 들어온 요청은 토큰이 맞아도 받지 않는다
+            if 'Origin' in self.headers or 'X-Forwarded-For' in self.headers:
+                return self.send(403, {'error': '허용되지 않은 요청'})
+            h = self.headers.get('Authorization') or ''
+            tok = h[7:].strip() if h[:7].lower() == 'bearer ' else ''
+            if not hmac.compare_digest(hashlib.sha256(tok.encode()).digest(), mcp_hash):
+                return self.send(401, {'error': 'invalid_token'}, headers=[('WWW-Authenticate', 'Bearer')])
+            if method != 'POST':
+                return self.send(405, {'error': 'POST만 지원'}, headers=[('Allow', 'POST')])
+            try:
+                msg = self.body()
+            except rec.RecError:
+                return self.send(400, {'jsonrpc': '2.0', 'id': None, 'error': {'code': -32700, 'message': 'Parse error'}})
+            code, out = mcp.handle(rec, msg)
+            if out is None:
+                return self.send(code, b'', 'text/plain')
+            return self.send(code, out)
 
         # 로그인 흐름: /auth/login → OIDC 제공자 → /auth/callback → 세션 쿠키(30일)
 
@@ -228,6 +259,8 @@ def serve(port, rec):
             try:
                 if path.startswith('/auth/') and method == 'GET':
                     return self.auth_route(path, query)
+                if path == '/mcp':
+                    return self.mcp_route(method)
                 if auth.enabled():
                     if not self.user():
                         if path.startswith('/api/'):

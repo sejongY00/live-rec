@@ -15,9 +15,9 @@ RUN python -m venv /opt/venv \
  && /opt/venv/bin/pip install --no-cache-dir -U 'yt-dlp[default]' \
  && chown -R ${PUID}:${PGID} /opt/venv
 
-# rec.py(데몬·CLI) + web.py·index.html(웹 화면) — 같은 폴더에 있어야 데몬이 web을 불러온다
+# rec.py(데몬·CLI) + web.py·index.html(웹 화면)·mcp.py(MCP) — 같은 폴더에 있어야 데몬이 web을 불러온다
 COPY --chmod=755 rec.py /opt/rec/
-COPY web.py index.html /opt/rec/
+COPY web.py index.html mcp.py /opt/rec/
 RUN ln -s /opt/rec/rec.py /usr/local/bin/rec
 
 ENV PATH=/opt/venv/bin:$PATH TZ=Asia/Seoul PYTHONUNBUFFERED=1

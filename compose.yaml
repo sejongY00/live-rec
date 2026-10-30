@@ -21,6 +21,8 @@ services:
       - REC_OIDC_CLIENT_ID=${REC_OIDC_CLIENT_ID:-}
       - REC_PUBLIC_URL=${REC_PUBLIC_URL:-}
       - REC_ALLOWED_USERS=${REC_ALLOWED_USERS:-}
+      # 에이전트용 MCP(/mcp) 고정 Bearer 토큰 (32자 이상). 비우면 끔
+      - REC_MCP_TOKEN=${REC_MCP_TOKEN:-}
     volumes:
       # 대기열·로그·쿠키·로그인 키 (cookies/, auth/ 는 비밀값)
       - ./data:/data

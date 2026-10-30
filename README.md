@@ -75,6 +75,25 @@ docker exec live-rec rec cookies                   # 상태 확인 (값은 출�
 쿠키는 계정 로그인 정보다. `data/cookies/`는 다른 사람과 공유하지 말 것.
 브라우저에서 로그아웃하면 쿠키도 무효가 되니 다시 넣어야 한다.
 
+## MCP (에이전트에게 녹화 요청)
+
+`.env`에 `REC_MCP_TOKEN`(32자 이상, `openssl rand -hex 32`)을 넣고 `docker compose up -d`하면
+`http://<서버 IP>:8790/mcp`가 MCP 서버(Streamable HTTP)가 된다. `Authorization: Bearer <REC_MCP_TOKEN>` 헤더로 붙는다.
+
+- 도구: `rec_check`(방송 확인), `rec_add`(등록·예약), `rec_list`(목록), `rec_status`(상세+로그), `rec_stop`(중지, `confirm: true` 필수)
+- 쿠키 입력과 기록 삭제는 도구로 열지 않는다
+- 웹 로그인(OIDC)과 별개로 토큰만 확인한다. 대신 브라우저 요청(Origin 헤더)과 리버스 프록시를 거친 요청(`X-Forwarded-For`)은 거부하므로, 공개 주소가 아니라 포트로 직접 붙어야 한다
+
+헤르메스 예시 (`~/.hermes/config.yaml`):
+
+```yaml
+mcp_servers:
+  live-rec:
+    url: http://<서버 IP>:8790/mcp
+    headers:
+      Authorization: "Bearer <REC_MCP_TOKEN>"
+```
+
 ## 외부 공개 (선택)
 
 웹 화면을 인터넷에 열 때는 리버스 프록시(Caddy, Nginx 등)로 HTTPS를 붙이고 **OIDC 로그인**을 켠다.
